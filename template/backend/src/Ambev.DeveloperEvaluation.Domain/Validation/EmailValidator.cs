@@ -9,11 +9,11 @@ public class EmailValidator : AbstractValidator<string>
     {
         RuleFor(email => email)
             .NotEmpty()
-            .WithMessage("The email address cannot be empty.")
+            .WithMessage("The email address is required.")
             .MaximumLength(100)
-            .WithMessage("The email address cannot be longer than 100 characters.")
+            .WithMessage("The email address too long.")
             .Must(BeValidEmail)
-            .WithMessage("The provided email address is not valid.");
+            .WithMessage("Invalid format.");
     }
 
     private bool BeValidEmail(string email)

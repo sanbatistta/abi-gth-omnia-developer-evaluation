@@ -1,50 +1,47 @@
-﻿using Ambev.DeveloperEvaluation.Common.Validation;
-using Ambev.DeveloperEvaluation.WebApi.Common;
-using FluentValidation;
+using System.Net;
 using System.Text.Json;
+using Ambev.DeveloperEvaluation.WebApi.Common;
 
-namespace Ambev.DeveloperEvaluation.WebApi.Middleware
+namespace Ambev.DeveloperEvaluation.WebApi.Middleware;
+
+public class ValidationExceptionMiddleware
 {
-    public class ValidationExceptionMiddleware
+    private readonly RequestDelegate _next;
+
+    public ValidationExceptionMiddleware(RequestDelegate next)
     {
-        private readonly RequestDelegate _next;
+        _next = next;
+    }
 
-        public ValidationExceptionMiddleware(RequestDelegate next)
+    public async Task InvokeAsync(HttpContext context)
+    {
+        try
         {
-            _next = next;
+            await _next(context);
         }
-
-        public async Task InvokeAsync(HttpContext context)
+        catch (ArgumentException exception)
         {
-            try
-            {
-                await _next(context);
-            }
-            catch (ValidationException ex)
-            {
-                await HandleValidationExceptionAsync(context, ex);
-            }
+            await HandleValidationExceptionAsync(context, exception);
         }
-
-        private static Task HandleValidationExceptionAsync(HttpContext context, ValidationException exception)
+        catch (InvalidOperationException exception)
         {
-            context.Response.ContentType = "application/json";
-            context.Response.StatusCode = StatusCodes.Status400BadRequest;
-
-            var response = new ApiResponse
-            {
-                Success = false,
-                Message = "Validation Failed",
-                Errors = exception.Errors
-                    .Select(error => (ValidationErrorDetail)error)
-            };
-
-            var jsonOptions = new JsonSerializerOptions
-            {
-                PropertyNamingPolicy = JsonNamingPolicy.CamelCase
-            };
-
-            return context.Response.WriteAsync(JsonSerializer.Serialize(response, jsonOptions));
+            await HandleValidationExceptionAsync(context, exception);
         }
+    }
+
+    private static async Task HandleValidationExceptionAsync(HttpContext context, Exception exception)
+    {
+        context.Response.ContentType = "application/json";
+        context.Response.StatusCode = (int)HttpStatusCode.BadRequest;
+
+        var response = ApiResponse.Error($"Validation Failed: {exception.Message}");
+
+        var jsonOptions = new JsonSerializerOptions
+        {
+            PropertyNamingPolicy = JsonNamingPolicy.CamelCase
+        };
+
+        var jsonResponse = JsonSerializer.Serialize(response, jsonOptions);
+        await context.Response.WriteAsync(jsonResponse);
     }
 }

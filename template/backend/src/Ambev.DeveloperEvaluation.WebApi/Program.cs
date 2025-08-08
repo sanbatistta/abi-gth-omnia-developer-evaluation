@@ -1,84 +1,96 @@
-using Ambev.DeveloperEvaluation.Application;
-using Ambev.DeveloperEvaluation.Common.HealthChecks;
-using Ambev.DeveloperEvaluation.Common.Logging;
-using Ambev.DeveloperEvaluation.Common.Security;
-using Ambev.DeveloperEvaluation.Common.Validation;
 using Ambev.DeveloperEvaluation.IoC;
 using Ambev.DeveloperEvaluation.ORM;
-using Ambev.DeveloperEvaluation.WebApi.Middleware;
-using MediatR;
 using Microsoft.EntityFrameworkCore;
-using Serilog;
+using Microsoft.OpenApi.Models;
+using System.Reflection;
 
-namespace Ambev.DeveloperEvaluation.WebApi;
+var builder = WebApplication.CreateBuilder(args);
 
-public class Program
+// Add services to the container.
+builder.Services.AddControllers();
+
+// Learn more about configuring Swagger/OpenAPI at https://aka.ms/aspnetcore/swashbuckle
+builder.Services.AddEndpointsApiExplorer();
+builder.Services.AddSwaggerGen(c =>
 {
-    public static void Main(string[] args)
+    c.SwaggerDoc("v1", new OpenApiInfo 
+    { 
+        Title = "Ambev Developer Evaluation API", 
+        Version = "v1",
+        Description = "API for managing sales operations",
+        Contact = new OpenApiContact
+        {
+            Name = "Developer Evaluation",
+            Email = "developer@ambev.com"
+        }
+    });
+
+    // Include XML comments
+    var xmlFile = $"{Assembly.GetExecutingAssembly().GetName().Name}.xml";
+    var xmlPath = Path.Combine(AppContext.BaseDirectory, xmlFile);
+    if (File.Exists(xmlPath))
     {
-        try
-        {
-            Log.Information("Starting web application");
+        c.IncludeXmlComments(xmlPath);
+    }
+});
 
-            WebApplicationBuilder builder = WebApplication.CreateBuilder(args);
-            builder.AddDefaultLogging();
+// Add CORS
+builder.Services.AddCors(options =>
+{
+    options.AddPolicy("AllowAll", policy =>
+    {
+        policy.AllowAnyOrigin()
+              .AllowAnyMethod()
+              .AllowAnyHeader();
+    });
+});
 
-            builder.Services.AddControllers();
-            builder.Services.AddEndpointsApiExplorer();
+// Database configuration - SQLite (no server needed!)
+builder.Services.AddDbContext<DefaultContext>(options =>
+{
+    options.UseSqlite("Data Source=sales.db");
+});
 
-            builder.AddBasicHealthChecks();
-            builder.Services.AddSwaggerGen();
+// Register application dependencies
+builder.RegisterDependencies();
 
-            builder.Services.AddDbContext<DefaultContext>(options =>
-                options.UseNpgsql(
-                    builder.Configuration.GetConnectionString("DefaultConnection"),
-                    b => b.MigrationsAssembly("Ambev.DeveloperEvaluation.ORM")
-                )
-            );
+var app = builder.Build();
 
-            builder.Services.AddJwtAuthentication(builder.Configuration);
+// Configure the HTTP request pipeline.
+if (app.Environment.IsDevelopment())
+{
+    app.UseSwagger();
+    app.UseSwaggerUI(c =>
+    {
+        c.SwaggerEndpoint("/swagger/v1/swagger.json", "Ambev Developer Evaluation API V1");
+        c.RoutePrefix = string.Empty; // Set Swagger UI at the app's root
+    });
+}
 
-            builder.RegisterDependencies();
+app.UseHttpsRedirection();
 
-            builder.Services.AddAutoMapper(typeof(Program).Assembly, typeof(ApplicationLayer).Assembly);
+app.UseCors("AllowAll");
 
-            builder.Services.AddMediatR(cfg =>
-            {
-                cfg.RegisterServicesFromAssemblies(
-                    typeof(ApplicationLayer).Assembly,
-                    typeof(Program).Assembly
-                );
-            });
+app.UseAuthorization();
 
-            builder.Services.AddTransient(typeof(IPipelineBehavior<,>), typeof(ValidationBehavior<,>));
+app.MapControllers();
 
-            var app = builder.Build();
-            app.UseMiddleware<ValidationExceptionMiddleware>();
-
-            if (app.Environment.IsDevelopment())
-            {
-                app.UseSwagger();
-                app.UseSwaggerUI();
-            }
-
-            app.UseHttpsRedirection();
-
-            app.UseAuthentication();
-            app.UseAuthorization();
-
-            app.UseBasicHealthChecks();
-
-            app.MapControllers();
-
-            app.Run();
-        }
-        catch (Exception ex)
-        {
-            Log.Fatal(ex, "Application terminated unexpectedly");
-        }
-        finally
-        {
-            Log.CloseAndFlush();
-        }
+// Create SQLite database automatically
+using (var scope = app.Services.CreateScope())
+{
+    var context = scope.ServiceProvider.GetRequiredService<DefaultContext>();
+    var logger = scope.ServiceProvider.GetRequiredService<ILogger<Program>>();
+    
+    try
+    {
+        // Create database and apply schema
+        context.Database.EnsureCreated();
+        logger.LogInformation("SQLite database created successfully at: sales.db");
+    }
+    catch (Exception ex)
+    {
+        logger.LogError(ex, "Error creating SQLite database: {Message}", ex.Message);
     }
 }
+
+app.Run();

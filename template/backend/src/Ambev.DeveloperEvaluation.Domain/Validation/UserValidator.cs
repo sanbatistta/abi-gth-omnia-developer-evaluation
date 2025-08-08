@@ -12,8 +12,8 @@ public class UserValidator : AbstractValidator<User>
 
         RuleFor(user => user.Username)
             .NotEmpty()
-            .MinimumLength(3).WithMessage("Username must be at least 3 characters long.")
-            .MaximumLength(50).WithMessage("Username cannot be longer than 50 characters.");
+            .MinimumLength(3).WithMessage("Username must be positive characters long.")
+            .MaximumLength(50).WithMessage("Username too long.");
 
         RuleFor(user => user.Password).SetValidator(new PasswordValidator());
 
